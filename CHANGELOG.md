@@ -1,5 +1,31 @@
 # Historial de Umbral
 
+## 1.2.0 — El peso del acero — 2026-09-23
+
+### Pedido del usuario
+
+> hay forma de mejorar las animaciónes? o es muy complejo?
+
+Ante la propuesta de comenzar por el protagonista y la espada, el usuario confirmó:
+
+> perfecto, realiza eso
+
+### Cambios
+
+- Protagonista articulado en pixel art: brazos y piernas coordinados, capa con movimiento, respiración y parpadeo en reposo. La cadencia de los pasos sigue la distancia recorrida y se detiene contra paredes.
+- Poses diferenciadas al subir, caer, aterrizar, impulsarse y lanzar magia; polvo al pisar y aterrizar. El aterrizaje no bloquea el siguiente salto.
+- Espada anclada a la mano, con preparación, tajo y recuperación interpolados. La estela sigue la punta de la hoja durante la fase activa.
+- Destello y pausa del mundo de aproximadamente 55 ms al confirmar un golpe o cortar un proyectil, una sola vez por ataque. Las pulsaciones recibidas durante esa pausa se conservan hasta reanudar la simulación.
+- El dibujo y la ventana de daño comparten los tiempos del ataque: 340 ms de animación, fase activa entre 80 y 260 ms y recarga de 440 ms de simulación. Se conservan daño, alcance, maná, niveles y guardados de la versión anterior.
+
+### Validación
+
+- 62 comprobaciones en Chrome: las 49 anteriores y 13 nuevas sobre fases del tajo, pausa de impacto, entrada durante la pausa, cadencia, aterrizaje, reinicio, poses y reflejo horizontal.
+- Revisión visual de poses ampliadas, combate en escritorio y móvil a 390 × 844, sin desbordamiento horizontal; pulsación y liberación del ataque táctil verificadas. La página principal inicia y dibuja sin errores durante la comprobación.
+- Las herramientas y capturas de prueba permanecen fuera de Git en `.test-artifacts/`.
+
+Se registra por separado como `v1.2.0`, conservando las etiquetas anteriores.
+
 ## 1.1.0 — Acero y magia — 2026-09-23
 
 ### Pedido del usuario

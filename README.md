@@ -1,6 +1,6 @@
 # Umbral · El paraíso miente
 
-**Versión 1.1.0 — Acero y magia.** La primera entrega sigue conservada en la etiqueta `v1.0.0`.
+**Versión 1.2.0 — El peso del acero.** Las entregas anteriores siguen conservadas en las etiquetas `v1.0.0` y `v1.1.0`.
 
 Un plataformas de fantasía oscura isekai en español, con sprites originales animados en pixel art. Despiertas en un bosque soleado y avanzas hacia un mundo cada vez más corrompido: ruinas marchitas, jardines de carne y una catedral infernal. Cuatro regiones, siete especies de enemigos, espada desde el inicio, maná, cristales, balizas y tres habilidades permanentes: doble salto, impulso arcano y bola de fuego.
 
@@ -11,6 +11,8 @@ El juego ocupa toda la ventana. El mapa, el grimorio, el bestiario animado y las
 La versión 1 reunió los pedidos de crear un plataformas isekai con niveles y magia desbloqueable, preparado para GitHub Pages, y llevarlo a pantalla completa con menús internos y un mundo progresivamente más tétrico. La versión 1.1 incorpora el pedido posterior: animaciones y pixel art más detallado, criaturas clásicas de fantasía, espada y magia limitada por maná. Se mantiene el oscurecimiento de las cuatro regiones.
 
 Los pedidos originales, el alcance de la versión y las comprobaciones realizadas están documentados en [CHANGELOG.md](./CHANGELOG.md). El archivo [VERSION](./VERSION) contiene el número de versión actual.
+
+La versión 1.2 desarrolla el pedido de mejorar las animaciones, comenzando por el protagonista y la espada. Los pasos coordinan brazos, piernas y capa según la distancia recorrida; hay poses distintas de ascenso, caída, aterrizaje e impulso. La espada prepara el golpe, traza un tajo y vuelve a reposo. Al acertar aparece un destello y el mundo se detiene unos 55 ms para dar peso al impacto, conservando las pulsaciones recibidas durante esa pausa.
 
 La etiqueta `v1.0.0` conserva la primera entrega como punto de partida. Los prototipos anteriores a la creación del repositorio no tienen commits separados.
 
@@ -98,6 +100,6 @@ El navegador guarda regiones completadas, habilidades y el mejor número de cris
 - `pixel-art.js`: sprites originales por fotogramas, poses y efectos animados de fuego, viento, impacto y recuperación.
 - `favicon.svg`: icono original.
 
-El escenario se dibuja mediante código en un Canvas de 540 píxeles de alto, escalado sin suavizado. Los personajes usan sprites de 48 × 48 píxeles, generados y almacenados en caché por pose y fotograma; caminar, respirar, atacar, lanzar magia, recibir daño y morir tienen representaciones propias. El fuego tiene seis fases, núcleo, contorno y estela; hay ráfagas turquesas de viento, destellos de maná, recuperación rosada e impactos. La imagen aportada por el usuario orientó el estilo de los efectos; no se usa como textura del juego.
+El escenario se dibuja mediante código en un Canvas de 540 píxeles de alto, escalado sin suavizado. Los enemigos usan sprites de 48 × 48 píxeles, generados y almacenados en caché por pose y fotograma. El protagonista se dibuja con extremidades articuladas sobre una base de 48 píxeles, un ciclo de 12 pasos y poses interpoladas de ataque. Su espada permanece unida a la mano y su estela sigue el recorrido de la hoja. El fuego tiene seis fases, núcleo, contorno y estela; hay ráfagas turquesas de viento, destellos de maná, recuperación rosada, polvo de pisadas e impactos. La imagen aportada por el usuario orientó el estilo de los efectos; no se usa como textura del juego.
 
 Los efectos de sonido se sintetizan con Web Audio y la interfaz usa una tipografía local monoespaciada. No hay imágenes, fuentes remotas, librerías, servicios de juego ni claves externas. Funciona sin conexión. Los datos de los niveles y sus paletas están al inicio de `game.js`. El guardado de la primera versión sigue siendo compatible.

@@ -24,6 +24,7 @@
     brute:{name:'Verdugo de ceniza',w:44,h:58,hp:4,speed:27,description:'Lanza brasas. Su casco tiene púas; ataca el cuerpo con espada o fuego.'}
   };
   const MAX_MANA = 100, FIRE_COST = 20, MANA_REGEN = 5;
+  const SWORD = UmbralArt.swordTiming;
   const levels = [
     { name: 'Bosque del despertar', sub: 'El primer salto', subtitle: 'Donde todo comienza', icon: '♧', rune: 'double', runeX: 830, runeY: 315, width: 3000, end: 2860, color: '#a48bdd', sky: ['#211d43', '#514b76'], ground: '#38314f', grass: '#99b994', spawn: [85, 390],
       platforms: [[0,450,540,110],[650,450,400,110],[1160,450,340,110],[1630,450,440,110],[2210,450,790,110],[340,365,115,24],[700,360,100,24],[880,285,120,24],[1190,345,110,24],[1430,265,120,24],[1720,340,150,24],[1980,285,130,24],[2270,345,140,24],[2510,285,160,24]],
@@ -63,6 +64,7 @@
   let audioContext, sound = false, helpWasPlaying = false;
   let viewWidth = 960, blood = [], hostileShots = [], kills = 0, encounterTypes = new Set();
   let effects = [], manaOrbs = [], deathSprites = [], manaNotice = 0, hudMana = -1, bestiaryCanvases = [];
+  let hitstop = 0;
   const keys = new Set(), pressed = new Set();
   const controls = { ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', Space: 'jump', ArrowUp: 'jump', KeyW: 'jump', ShiftLeft: 'dash', ShiftRight: 'dash', KeyX: 'dash', KeyE: 'magic', KeyJ: 'magic', KeyC:'melee', KeyK:'melee' };
   const has = id => save.abilities.includes(id);
@@ -116,9 +118,9 @@
   function updateManaUI(){const value=Math.floor(player.mana);if(value===hudMana)return;hudMana=value;$('mana-value').textContent=`${value} / ${MAX_MANA}`;$('mana-fill').style.width=`${value}%`;$('mana-meter').setAttribute('aria-valuenow',String(value));$('mana-meter').classList.toggle('low',value<FIRE_COST);}
   function loadLevel(index) {
     levelIndex = index; level = levels[index]; checkpoint = [...level.spawn]; checkpointIndex = -1;
-    player = { x: checkpoint[0], y: checkpoint[1], w: 24, h: 38, vx: 0, vy: 0, facing: 1, grounded: false, jumps: 0, coyote: 0, buffer: 0, hp: 3, invulnerable: 0, dashTime: 0, dashCooldown: 0, fireCooldown: 0, mana:MAX_MANA,manaDelay:0,meleeTime:0,meleeCooldown:0,meleeFacing:1,meleeHits:new Set(),castTime:0 };
+    player = { x: checkpoint[0], y: checkpoint[1], w: 24, h: 38, vx: 0, vy: 0, facing: 1, grounded: false, jumps: 0, coyote: 0, buffer: 0, hp: 3, invulnerable: 0, dashTime: 0, dashCooldown: 0, fireCooldown: 0, mana:MAX_MANA,manaDelay:0,meleeTime:0,meleeCooldown:0,meleeFacing:1,meleeHits:new Set(),meleeImpact:false,castTime:0,animClock:0,stride:0,animSpeed:0,landTime:0 };
     enemies = level.enemies.map(([x,y,min,max,type='walker'],i) => ({ x,y:y+30-enemyTypes[type].h,baseY:y+30-enemyTypes[type].h,min,max,...enemyTypes[type],maxHp:enemyTypes[type].hp,type,dir:-1,alive:true,hitTime:0,attackCooldown:1+i*.21,attackTime:0,state:'patrol',phase:i*.77,knockback:0,lastX:x }));
-    gems = level.gems.map(([x,y]) => ({x,y,taken:false})); shots = []; particles = []; blood = []; hostileShots = []; effects=[];manaOrbs=[];deathSprites=[];hudMana=-1;manaNotice=0;kills = 0; encounterTypes = new Set(); camera = 0; shake = 0;
+    gems = level.gems.map(([x,y]) => ({x,y,taken:false})); shots = []; particles = []; blood = []; hostileShots = []; effects=[];manaOrbs=[];deathSprites=[];hudMana=-1;manaNotice=0;kills = 0; encounterTypes = new Set(); camera = 0; shake = 0;hitstop=0;
     clearControls(); updateUI();
   }
   function clearControls() { keys.clear(); pressed.clear(); document.querySelectorAll('.pressed').forEach(el => el.classList.remove('pressed')); }
@@ -156,7 +158,7 @@
     if(levelIndex) splatter(player.x+12,player.y+25,12);
     if (player.hp <= 0) { loadLevel(levelIndex); toast('Cada caída enseña algo. Inténtalo de nuevo.'); }
     else {
-      player.x = checkpoint[0]; player.y = checkpoint[1]; player.vx = 0; player.vy = 0; player.jumps = 0; player.dashTime = 0; player.grounded = false; player.coyote = 0; player.buffer = 0;player.meleeTime=0;player.castTime=0;player.meleeHits.clear();hostileShots=[];
+      player.x = checkpoint[0]; player.y = checkpoint[1]; player.vx = 0; player.vy = 0; player.jumps = 0; player.dashTime = 0; player.grounded = false; player.coyote = 0; player.buffer = 0;player.meleeTime=0;player.castTime=0;player.meleeHits.clear();player.animSpeed=0;player.landTime=0;player.stride=0;hostileShots=[];hitstop=0;
     }
     player.invulnerable = 1.8; updateStats();
   }
@@ -171,7 +173,7 @@
     const floor=level.platforms.filter(([px,py,w])=>x>=px&&x<=px+w&&py>=y-6).sort((a,b)=>a[1]-b[1])[0];
     if(floor){blood.push({x:x-15-Math.random()*10,y:floor[1]-2,w:24+Math.random()*22});if(blood.length>100)blood.shift();}
   }
-  function addEffect(kind,x,y,dir=1){effects.push({kind,x,y,dir,life:.45,max:.45});}
+  function addEffect(kind,x,y,dir=1,duration=.45){effects.push({kind,x,y,dir,life:duration,max:duration});}
   function damageEnemy(e,amount=1,direction=player.facing) {
     if(e.hitTime>0||!e.alive)return false;
     e.hp-=amount;e.hitTime=.18;e.knockback=direction*(e.type==='brute'?40:150);burst(e.x+e.w/2,e.y+e.h/2,levelIndex?level.blood:'#c1df88',9);tone(e.type==='brute'?100:210,.13,'triangle');
@@ -181,13 +183,17 @@
   }
   function blockedBetween(x,y,xx,yy){const n=Math.ceil(Math.hypot(xx-x,yy-y)/3);for(let i=1;i<n;i++){const px=x+(xx-x)*i/n,py=y+(yy-y)*i/n;if(level.platforms.some(([bx,by,w,h])=>px>bx&&px<bx+w&&py>by&&py<by+h))return true;}return false;}
   function meleeBounds(){const p=player;return{x:p.meleeFacing>0?p.x+p.w-4:p.x-52,y:p.y-8,w:56,h:p.h+16};}
+  function swordImpact(x,y){
+    addEffect('impact',x,y,player.meleeFacing,.2);
+    if(!player.meleeImpact){player.meleeImpact=true;hitstop=SWORD.hitstop;shake=Math.max(shake,.08);tone(680,.07,'triangle',.045);}
+  }
   function updateMelee(){
-    const p=player;if(p.meleeTime<=.08||p.meleeTime>.26)return;
+    const p=player,elapsed=SWORD.duration-p.meleeTime;if(p.meleeTime<=0||elapsed<SWORD.windup||elapsed>=SWORD.activeEnd)return;
     const hit=meleeBounds();
     for(const e of enemies)if(e.alive&&!p.meleeHits.has(e)&&overlaps(hit,e)&&!blockedBetween(p.x+p.w/2,p.y+18,e.x+e.w/2,e.y+e.h/2)){
-      if(damageEnemy(e,1,p.meleeFacing)){p.meleeHits.add(e);addEffect('slash',e.x+e.w/2,e.y+e.h/2,p.meleeFacing);}
+      if(damageEnemy(e,1,p.meleeFacing)){p.meleeHits.add(e);swordImpact(p.meleeFacing>0?e.x+3:e.x+e.w-3,clamp(p.y+18,e.y+3,e.y+e.h-3));}
     }
-    for(const s of hostileShots)if(s.life>0&&overlaps(hit,s)&&!blockedBetween(p.x+12,p.y+18,s.x+s.w/2,s.y+s.h/2)){s.life=0;addEffect('burst',s.x,s.y);tone(760,.08);}
+    for(const s of hostileShots)if(s.life>0&&overlaps(hit,s)&&!blockedBetween(p.x+12,p.y+18,s.x+s.w/2,s.y+s.h/2)){s.life=0;swordImpact(s.x,s.y);tone(760,.08);}
   }
   function updateEnemies(dt,beforeY) {
     const p=player;
@@ -235,11 +241,15 @@
     return true;
   }
   function update(dt) {
-    if(mode!=='paused')time += dt; toastTimer -= dt; if (toastTimer <= 0) $('toast').classList.remove('visible');
-    if (mode !== 'playing') { pressed.clear(); return; }
+    toastTimer -= dt; if (toastTimer <= 0) $('toast').classList.remove('visible');
+    if (mode !== 'playing') {if(mode!=='paused')time+=dt;pressed.clear();return;}
+    // Preserve queued inputs while the world freezes briefly on a confirmed hit.
+    if(hitstop>0){hitstop=Math.max(0,hitstop-dt);return;}
+    time+=dt;
     particles = particles.filter(p => p.life > 0); for(const p of particles) { p.life -= dt; p.x += p.vx*dt; p.y += p.vy*dt; p.vy += (p.gore?600:110)*dt; }
     effects=effects.filter(e=>{e.life-=dt;return e.life>0;});deathSprites=deathSprites.filter(e=>{e.life-=dt;return e.life>0;});
     const p = player; shake = Math.max(0,shake-dt); p.invulnerable -= dt; p.dashCooldown -= dt; p.fireCooldown -= dt; p.buffer -= dt;p.meleeCooldown-=dt;p.meleeTime=Math.max(0,p.meleeTime-dt);p.castTime=Math.max(0,p.castTime-dt);p.manaDelay-=dt;manaNotice-=dt;
+    const wasGrounded=p.grounded;p.animClock+=dt;p.landTime=Math.max(0,p.landTime-dt);
     if(p.manaDelay<=0)p.mana=Math.min(MAX_MANA,p.mana+MANA_REGEN*dt);
     for(const orb of manaOrbs){orb.life-=dt;const dx=p.x+12-orb.x,dy=p.y+18-orb.y,d=Math.hypot(dx,dy);if(d<110){orb.x+=dx*dt*8;orb.y+=dy*dt*8;}if(d<24){p.mana=Math.min(MAX_MANA,p.mana+20);orb.life=0;addEffect('mana',p.x+12,p.y+20);tone(860,.12);}}
     manaOrbs=manaOrbs.filter(o=>o.life>0);
@@ -251,7 +261,7 @@
       if(airborne)addEffect('wind',p.x+12,p.y+38);
     }
     const dir = (keys.has('right') ? 1 : 0) - (keys.has('left') ? 1 : 0); if(dir) p.facing = dir;
-    if((pressed.has('melee')||keys.has('melee'))&&p.meleeCooldown<=0&&p.dashTime<=0){p.meleeTime=.34;p.meleeCooldown=.44;p.meleeFacing=p.facing;p.meleeHits.clear();tone(330,.13,'triangle');}
+    if((pressed.has('melee')||keys.has('melee'))&&p.meleeCooldown<=0&&p.dashTime<=0){p.meleeTime=SWORD.duration;p.meleeCooldown=SWORD.cooldown;p.meleeFacing=p.facing;p.meleeHits.clear();p.meleeImpact=false;tone(330,.13,'triangle');}
     if(pressed.has('dash') && has('dash') && p.dashCooldown <= 0) { p.dashTime = .22; p.dashCooldown = .85; p.vy = 0;p.meleeTime=0;addEffect('wind',p.x+12,p.y+20);tone(300,.2,'sawtooth',.016); }
     if(pressed.has('magic') && has('fire') && p.fireCooldown <= 0&&p.meleeTime<=0) {
       if(p.mana>=FIRE_COST){p.mana-=FIRE_COST;p.manaDelay=1.2;shots.push({x:p.x+12+p.facing*16,y:p.y+17,vx:p.facing*480,w:16,h:14,life:1.45,age:0});p.fireCooldown=.4;p.castTime=.28;tone(240,.16,'triangle');}
@@ -261,11 +271,14 @@
     else { p.vx += (dir*255-p.vx)*Math.min(1,dt*(p.grounded?17:10)); p.vy = Math.min(860,p.vy+1650*dt); }
     const beforeX = p.x; p.x = clamp(p.x+p.vx*dt,0,level.width-p.w);
     for(const [x,y,w,h] of level.platforms) if(overlaps(p,{x,y,w,h})) { if(beforeX+p.w<=x+.5) p.x=x-p.w; else if(beforeX>=x+w-.5) p.x=x+w; }
-    const beforeY = p.y; p.y += p.vy*dt; p.grounded = false;
+    p.animSpeed=Math.abs(p.x-beforeX)/dt;
+    if(wasGrounded&&p.dashTime<=0){const oldStride=p.stride;p.stride+=Math.abs(p.x-beforeX)/80*Math.PI*2;if(Math.floor(oldStride/Math.PI)!==Math.floor(p.stride/Math.PI)&&p.animSpeed>100)addEffect('dust',p.x+12,p.y+p.h,p.facing,.2);}
+    const beforeY = p.y,landingSpeed=p.vy; p.y += p.vy*dt; p.grounded = false;
     for(const [x,y,w,h] of level.platforms) if(overlaps(p,{x,y,w,h})) {
       if(p.vy>=0 && beforeY+p.h<=y+1) { p.y=y-p.h; p.vy=0; p.grounded=true; p.jumps=0; }
       else if(p.vy<0 && beforeY>=y+h-1) { p.y=y+h; p.vy=0; }
     }
+    if(p.grounded&&!wasGrounded&&landingSpeed>120){p.landTime=.14;addEffect('dust',p.x+12,p.y+p.h,p.facing,.25);}
     if(!p.grounded && p.jumps===0 && p.coyote<=0) p.jumps=1;
     if(p.y>620) { hurt(true); pressed.clear(); return; }
     for(const g of gems) if(!g.taken && Math.hypot(p.x+12-g.x,p.y+18-g.y)<29) { g.taken=true;p.mana=Math.min(MAX_MANA,p.mana+12);addEffect('mana',g.x,g.y);burst(g.x,g.y,'#a1edce',9); tone(820,.09); updateStats(); }
@@ -284,7 +297,7 @@
     camera += (clamp(p.x-viewWidth*.35,0,Math.max(0,level.width-viewWidth))-camera)*Math.min(1,dt*6);
     $('cooldown-dash').style.height=`${clamp(p.dashCooldown/.85,0,1)*100}%`;
     $('cooldown-fire').style.height=`${clamp(p.fireCooldown/.4,0,1)*100}%`;
-    $('cooldown-melee').style.height=`${clamp(p.meleeCooldown/.44,0,1)*100}%`;updateManaUI();
+    $('cooldown-melee').style.height=`${clamp(p.meleeCooldown/SWORD.cooldown,0,1)*100}%`;updateManaUI();
     if(p.x>level.end-13 && p.x<level.end+65 && p.y+p.h>360) finishLevel();
     pressed.clear();
   }
@@ -361,14 +374,14 @@
   function drawPlayer() {
     const p=player;
     if(p.invulnerable>0&&Math.floor(time*12)%2)return;
-    const moving=p.grounded&&Math.abs(p.vx)>25;
-    const state=p.meleeTime>0?'attack':p.castTime>0?'cast':!p.grounded?'jump':moving?'walk':'idle';
+    const moving=p.grounded&&p.animSpeed>25;
+    const state=p.meleeTime>0?'attack':p.dashTime>0?'dash':p.castTime>0?'cast':!p.grounded?(p.vy<0?'rise':'fall'):p.landTime>0?'land':moving?(p.animSpeed>180?'run':'walk'):'idle';
+    const elapsed=state==='attack'?SWORD.duration-p.meleeTime:state==='land'?.14-p.landTime:state==='cast'?.28-p.castTime:0;
+    const motion={state,elapsed,time:p.animClock,cycle:p.stride,speed:p.animSpeed};
     const direction=p.meleeTime>0?p.meleeFacing:p.facing;
     ellipse(p.x+12,p.y+39,15,3,'#15102045');
-    if(p.dashTime>0){for(let i=3;i>0;i--){ctx.globalAlpha=.12+(3-i)*.06;UmbralArt.actor(ctx,'hero',p.x+12-direction*i*15,p.y+38,48,48,direction,time,state);}ctx.globalAlpha=1;}
-    UmbralArt.actor(ctx,'hero',p.x+12,p.y+38,48,48,direction,time,state);
-    if(p.meleeTime>0)UmbralArt.sword(ctx,p.x+12+direction*8,p.y+20,direction,1-p.meleeTime/.34);
-    if(p.castTime>0)UmbralArt.flame(ctx,p.x+12+direction*26,p.y+18,time,.6,direction);
+    if(p.dashTime>0){for(let i=3;i>0;i--){ctx.globalAlpha=.12+(3-i)*.06;UmbralArt.hero(ctx,p.x+12-direction*i*15,p.y+38,direction,motion);}ctx.globalAlpha=1;}
+    UmbralArt.hero(ctx,p.x+12,p.y+38,direction,motion);
   }
   function actorSize(e){return e.type==='bat'?[46,38]:e.type==='walker'?[42,38]:e.type==='hound'?[54,38]:e.type==='brute'?[58,64]:e.type==='hobgoblin'?[58,60]:[46,48];}
   function drawEnemy(e) {
