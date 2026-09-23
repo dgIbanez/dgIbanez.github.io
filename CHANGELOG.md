@@ -1,5 +1,35 @@
 # Historial de Umbral
 
+## 1.3.0 — Un almuerzo pendiente — 2026-09-23
+
+### Pedido del usuario
+
+El usuario compartió una idea completa de campaña: un dragón roba el chorizo del protagonista, que lo persigue a través de regiones progresivamente más oscuras. La referencia está conservada en [docs/IDEA_ORIGINAL.md](./docs/IDEA_ORIGINAL.md); el alcance y lo pendiente están en [docs/DESIGN.md](./docs/DESIGN.md).
+
+Se propuso implementar primero el prólogo, los Campos del Reino, las primeras páginas de Ignis, el Goblin Chief y su cierre rumbo a Valdren. El usuario confirmó:
+
+> Perfecto, vamos con eso. Ese apartado de "dependiendo si derrotas enemigos con melee, te da estamina, o con magia te da maná" de momento dejalo de lado
+
+### Cambios
+
+- Prólogo de tres escenas con pixel art animado del protagonista, el dragón y el chorizo. Avance manual, omisión, repetición desde el menú y combate detenido mientras se muestra.
+- Primera región ampliada como Los Campos del Reino, con campamento, casas, torre de madera, baliza y arena al final.
+- Páginas persistentes de Ignis e Ignis II. El fuego se aprende en la primera región; la mejora añade daño directo y explosión, mantiene el coste de 20 MP y se refleja en el grimorio y el HUD.
+- Goblin Chief de 18 de vida: barrido y ondas de maza con preparación, ataque y recuperación; corona inmune a pisotones, barra de jefe, límites de arena y reintento cercano tras morir.
+- Escena de victoria con el dragón escapando, portal bloqueado hasta derrotar al jefe y continuación hacia Las Ruinas de Valdren. Se mantienen las cuatro regiones jugables; las once regiones de la propuesta no están implementadas aún.
+- Migración de guardados anteriores, páginas conservadas al morir y estado del jefe reiniciado al repetir una región.
+- Sin stamina ni recompensas por tipo de ataque. Las esencias dan los mismos 20 MP para todas las bajas, como antes.
+
+### Validación
+
+- 85 comprobaciones automatizadas en Chrome: 62 del motor anterior, adaptando las expectativas del portal y el plantel inicial, y 23 de escenas, páginas, explosiones, arena, ataques del jefe, muerte y transición a Valdren.
+- Recorrido con entradas de movimiento, salto y magia desde el inicio hasta ambas páginas, combate contra el Chief y apertura del portal, sin teletransportar al jugador ni modificar su vida o daño.
+- Carga de guardados antiguos, guardados con la mejora y campos inválidos; preservación del progreso y normalización de páginas.
+- Revisión visual del prólogo en escritorio y móvil a 390 × 844, de la arena del jefe y del grimorio móvil: sin desbordamiento horizontal y con acceso a los controles mediante desplazamiento. La página principal abre el prólogo y reanuda el juego sin errores en la prueba.
+- Herramientas y capturas locales en `.test-artifacts/`, fuera de Git.
+
+Versión local `v1.3.0`; se conservan las etiquetas anteriores.
+
 ## 1.2.0 — El peso del acero — 2026-09-23
 
 ### Pedido del usuario

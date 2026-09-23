@@ -6,7 +6,7 @@
   const abilities = [
     { id: 'double', name: 'Doble salto', symbol: '↟', key: 'ESPACIO × 2', text: 'El viento te sostiene. ¡Salta otra vez en el aire!' },
     { id: 'dash', name: 'Impulso arcano', symbol: '⇢', key: 'SHIFT / X', text: 'Cruza el vacío. Pulsa Shift o X para impulsarte.' },
-    { id: 'fire', name: 'Bola de fuego', symbol: '✦', key: 'E / J', text: 'La llama responde a ti. Pulsa E o J para atacar.' }
+    { id: 'fire', name: 'Ignis', symbol: '✦', key: 'E / J', text: 'Una página del grimorio despierta el fuego. Pulsa E o J.' }
   ];
   const themes = [
     { name: 'Bosque del despertar', subtitle: 'El sol todavía recuerda tu nombre', corruption: 0, sky: ['#79c1c1','#d9e8af'], ground:'#705b3b', grass:'#9aca60', foliage:['#3e7851','#5f9a59','#88b55e'], hills:['#8ebc91','#70a278','#548764'], blood:'#799b55' },
@@ -40,6 +40,13 @@
       gems: [[210,412],[370,292],[700,227],[1010,290],[1230,197],[1520,252],[1750,207],[1970,312],[2200,207],[2520,277],[2840,292],[3150,282],[3310,410]], enemies: [[620,360,570,720],[1460,390,1390,1580],[1930,320,1860,2060],[2490,410,2370,2670],[3210,420,2990,3360]], checkpoints: [[1450,420],[2450,440]] }
   ];
   levels.forEach((entry,i)=>Object.assign(entry,themes[i]));
+  Object.assign(levels[0], {name:'Los Campos del Reino',subtitle:'Un nuevo mundo. Un almuerzo pendiente.',width:3800,end:3660,
+    pages:[{id:'ignis',x:270,y:410},{id:'ignis2',x:1485,y:225}]});
+  Object.assign(levels[1], {name:'Las Ruinas de Valdren',subtitle:'Las huellas del ladrón se pierden entre las piedras'});
+  levels[0].platforms[4][2]=1590;
+  levels[0].checkpoints.push([2940,450]);
+  // Fire now comes from the first region's grimoire; the old fire rune is retired.
+  delete levels[2].rune;
   // Spawn rows retain foot coordinates; every ground patrol stays on its platform.
   [['walker','goblin','goblin'],['skeleton','hound','goblin','hobgoblin'],['goblin','hound','brute','hobgoblin','skeleton'],['hobgoblin','skeleton','brute','hobgoblin','brute']].forEach((roster,i)=>levels[i].enemies.forEach((e,j)=>e.push(roster[j])));
   levels[0].enemies.push([2000,240,1930,2140,'bat']);
@@ -47,7 +54,13 @@
   levels[2].enemies.push([2120,235,2030,2220,'bat']);
   levels[3].enemies.push([2530,410,2370,2640,'hound'],[3330,420,3200,3380,'brute']);
   levels[3].enemies.push([2760,245,2730,2880,'bat']);
-  let save = { unlocked: 0, completed: [], abilities: [], best: {} };
+  enemyTypes.chief={name:'Goblin Chief',w:52,h:70,hp:18,speed:64,description:'Rey de un peaje improvisado. Corona inmune a pisotones. Salta el barrido y las ondas de su maza; ataca durante la recuperación.'};
+  levels[0].enemies.push([3400,420,3020,3520,'chief']);
+  const grimoirePages=[
+    {id:'ignis',name:'Ignis · Primera chispa',hint:'Junto al campamento, al comienzo de los Campos.',text:'Bola de fuego · 2 de daño · 20 MP.'},
+    {id:'ignis2',name:'Ignis II · Brasa expansiva',hint:'En la torre de madera, sobre el primer slime. Usa el doble salto.',text:'3 de daño directo y explosión de 2 de daño a criaturas cercanas · 20 MP.'}
+  ];
+  let save = { unlocked: 0, completed: [], abilities: [], best: {}, pages:[],introSeen:false };
   let storageAvailable = true;
   try {
     const raw = JSON.parse(localStorage.getItem(SAVE_KEY));
@@ -56,6 +69,10 @@
       // Derive unlocks from completed chapters so incomplete/corrupt saves stay playable.
       while (save.unlocked < 3 && save.completed.includes(save.unlocked)) save.unlocked++;
       save.abilities = abilities.filter((a, i) => i < save.unlocked || (Array.isArray(raw.abilities) && raw.abilities.includes(a.id))).map(a => a.id);
+      save.pages=grimoirePages.filter(p=>Array.isArray(raw.pages)&&raw.pages.includes(p.id)).map(p=>p.id);
+      if((save.abilities.includes('fire')||save.completed.includes(0)||save.pages.includes('ignis2'))&&!save.pages.includes('ignis'))save.pages.unshift('ignis');
+      if(save.pages.includes('ignis')&&!save.abilities.includes('fire'))save.abilities.push('fire');
+      save.introSeen=raw.introSeen===true;
       if (raw.best && typeof raw.best === 'object') for (let i = 0; i < 4; i++) save.best[i] = Math.max(0, Math.min(levels[i].gems.length, Number(raw.best[i]) || 0));
     }
   } catch { storageAvailable = false; }
@@ -65,6 +82,8 @@
   let viewWidth = 960, blood = [], hostileShots = [], kills = 0, encounterTypes = new Set();
   let effects = [], manaOrbs = [], deathSprites = [], manaNotice = 0, hudMana = -1, bestiaryCanvases = [];
   let hitstop = 0;
+  let arena, outroPending=false;
+  const fireTier=()=>save.pages?.includes('ignis2')?2:1;
   const keys = new Set(), pressed = new Set();
   const controls = { ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', Space: 'jump', ArrowUp: 'jump', KeyW: 'jump', ShiftLeft: 'dash', ShiftRight: 'dash', KeyX: 'dash', KeyE: 'magic', KeyJ: 'magic', KeyC:'melee', KeyK:'melee' };
   const has = id => save.abilities.includes(id);
@@ -97,13 +116,16 @@
     $('progress-count').textContent = `${save.completed.length} / 4`;
     $('level-list').innerHTML = levels.map((l, i) => `<button class="level-button ${i === levelIndex ? 'active' : ''}" data-level="${i}" ${i > save.unlocked ? 'disabled' : ''} ${i === levelIndex ? 'aria-current="step"' : ''}><span class="level-icon">${l.icon}</span><span class="level-copy"><strong>${l.name}</strong><small>${i > save.unlocked ? 'Región por descubrir' : save.completed.includes(i) ? `Completado · ${save.best[i] || 0}/${l.gems.length} ◆` : i === levelIndex ? 'Tu aventura empieza aquí' : l.sub}</small></span><span class="level-end">${save.completed.includes(i) ? '✓' : i > save.unlocked ? '·' : '›'}</span></button>`).join('');
     $('ability-count').textContent = `${save.abilities.length} DE 3 HABILIDADES`;
-    $('ability-list').innerHTML = abilities.map(a => `<div class="ability ${has(a.id) ? 'unlocked' : ''}" title="${has(a.id) ? a.text : 'Descubre la runa en la región ' + (abilities.indexOf(a) + 1)}"><span class="ability-symbol">${a.symbol}</span><div><strong>${a.name}</strong><small>${has(a.id) ? a.key : 'Por descubrir'}</small></div></div>`).join('');
+    $('ability-list').innerHTML = abilities.map(a => `<div class="ability ${has(a.id) ? 'unlocked' : ''}" title="${has(a.id) ? a.text : a.id==='fire' ? 'Busca la primera página en los Campos del Reino' : 'Descubre la runa en la región ' + (abilities.indexOf(a) + 1)}"><span class="ability-symbol">${a.symbol}</span><div><strong>${a.name}</strong><small>${has(a.id) ? a.key : 'Por descubrir'}</small></div></div>`).join('');
     $('quick-abilities').innerHTML = '<span class="quick-ability ready" title="Espada: C / K / clic · sin coste de maná">⚔<i id="cooldown-melee"></i></span>' + abilities.map(a=>`<span class="quick-ability ${has(a.id)?'ready':''}" title="${a.name}: ${has(a.id)?a.key:'bloqueado'}${a.id==='fire'?' · 20 maná':''}">${a.symbol}<i id="cooldown-${a.id}"></i></span>`).join('');
     $('bestiary-list').innerHTML=Object.entries(enemyTypes).map(([type,e])=>`<article><canvas class="bestiary-sprite" data-creature="${type}" width="72" height="72" aria-label="${e.name}"></canvas><div><h3>${e.name} <small>${e.hp} VIDA${e.hp>1?'S':''}</small></h3><p>${e.description}</p></div></article>`).join('');
     bestiaryCanvases=[...document.querySelectorAll('.bestiary-sprite')];
+    $('grimoire-pages').innerHTML=grimoirePages.map(page=>{const found=save.pages?.includes(page.id);return `<article class="grimoire-page ${found?'found':''}"><strong>${found?'✦':'◇'} ${page.name}</strong><p>${found?page.text:page.hint}</p><small>${found?(page.id==='ignis'&&fireTier()===2?'INTEGRADA EN IGNIS II':'APRENDIDA · MEJORA AUTOMÁTICA'):'PÁGINA POR ENCONTRAR'}</small></article>`;}).join('');
+    document.querySelector('.mana-cost').textContent=`IGNIS${fireTier()===2?' II':''}: 20 MP`;
     const needsRune = level.rune && !has(level.rune);
     $('objective-label').textContent = needsRune ? 'BUSCA LA RUNA' : 'ALCANZA EL PORTAL';
     $('objective-copy').textContent = needsRune ? abilities.find(a=>a.id===level.rune).name : 'Sigue avanzando. Aún hay salida.';
+    if(levelIndex===0){$('objective-label').textContent=!has('fire')?'BUSCA EL GRIMORIO':needsRune?'BUSCA LA RUNA':!arena.defeated?'DERROTA AL CHIEF':'SEGUÍ AL DRAGÓN';$('objective-copy').textContent=!has('fire')?'Primera página junto al campamento.':needsRune?'El viento te permite saltar dos veces.':!arena.defeated?'El peaje está al final de los Campos.':'Rumbo a las Ruinas de Valdren.';}
     document.querySelector('[data-control="dash"]').disabled = !has('dash');
     document.querySelector('[data-control="magic"]').disabled = !has('fire');
     updateStats();
@@ -118,8 +140,10 @@
   function updateManaUI(){const value=Math.floor(player.mana);if(value===hudMana)return;hudMana=value;$('mana-value').textContent=`${value} / ${MAX_MANA}`;$('mana-fill').style.width=`${value}%`;$('mana-meter').setAttribute('aria-valuenow',String(value));$('mana-meter').classList.toggle('low',value<FIRE_COST);}
   function loadLevel(index) {
     levelIndex = index; level = levels[index]; checkpoint = [...level.spawn]; checkpointIndex = -1;
+    arena={active:false,defeated:false,left:3000,right:3580};outroPending=false;document.body.classList.remove('arena-active');$('boss-hud').hidden=true;
     player = { x: checkpoint[0], y: checkpoint[1], w: 24, h: 38, vx: 0, vy: 0, facing: 1, grounded: false, jumps: 0, coyote: 0, buffer: 0, hp: 3, invulnerable: 0, dashTime: 0, dashCooldown: 0, fireCooldown: 0, mana:MAX_MANA,manaDelay:0,meleeTime:0,meleeCooldown:0,meleeFacing:1,meleeHits:new Set(),meleeImpact:false,castTime:0,animClock:0,stride:0,animSpeed:0,landTime:0 };
     enemies = level.enemies.map(([x,y,min,max,type='walker'],i) => ({ x,y:y+30-enemyTypes[type].h,baseY:y+30-enemyTypes[type].h,min,max,...enemyTypes[type],maxHp:enemyTypes[type].hp,type,dir:-1,alive:true,hitTime:0,attackCooldown:1+i*.21,attackTime:0,state:'patrol',phase:i*.77,knockback:0,lastX:x }));
+    const chief=enemies.find(e=>e.type==='chief');if(chief){chief.state='dormant';chief.cycle=0;chief.move='sweep';}
     gems = level.gems.map(([x,y]) => ({x,y,taken:false})); shots = []; particles = []; blood = []; hostileShots = []; effects=[];manaOrbs=[];deathSprites=[];hudMana=-1;manaNotice=0;kills = 0; encounterTypes = new Set(); camera = 0; shake = 0;hitstop=0;
     clearControls(); updateUI();
   }
@@ -132,6 +156,9 @@
       complete: ['OTRO UMBRAL SE ABRE', ['Algo cambia<br>en el viento.','La tierra<br>empieza a sangrar.','Ya no queda<br>ningún cielo.'][levelIndex] || 'Sigue adelante.', `${gems.filter(g=>g.taken).length} / ${gems.length} cristales · ${kills} criaturas derrotadas.<br>${['Detrás del portal, no se oyen pájaros.','Un olor a hierro llega desde el otro lado.','Las campanas llaman desde debajo de la tierra.'][levelIndex] || ''}`, 'CRUZAR EL PORTAL', 'LO QUE HAS APRENDIDO ES LO ÚNICO QUE TE QUEDA'],
       victory: ['EL ABISMO SE HA CERRADO', 'El amanecer<br>te pertenece.', 'Has atravesado la catedral y sobrevivido al descenso.<br>Al otro lado, por fin, vuelves a oír los pájaros.', 'VOLVER AL BOSQUE', 'EL PARAÍSO MENTÍA. TÚ SOBREVIVISTE.']
     }[kind];
+    if(kind==='title'){content[0]='UN ISEKAI CON HAMBRE';content[1]='Un dragón.<br>Tu chorizo.';content[2]='Apareciste en otro mundo. Un pequeño dragón se llevó tu almuerzo.<br>Recuperarlo parecía una misión sencilla.';content[4]='LA AVENTURA EMPIEZA POR EL ESTÓMAGO.';}
+    if(kind==='complete'&&levelIndex===0){content[0]='EL RASTRO SIGUE';content[1]='Rumbo<br>a Valdren.';content[2]=`El Goblin Chief ya no cobra peaje.<br>${gems.filter(g=>g.taken).length} / ${gems.length} cristales · ${save.pages?.length||0} / 2 páginas de Ignis.<br>El dragón huyó entre las ruinas con tu chorizo.`;content[4]='EL ALMUERZO NO SE VA A RECUPERAR SOLO.';}
+    if(kind==='victory'){content[0]='EL RASTRO CONTINÚA';content[1]='Todavía<br>tenés hambre.';content[2]='Sobreviviste al descenso. El dragón sigue más allá.<br>La persecución continuará en próximas regiones.';content[3]='VOLVER A LOS CAMPOS';content[4]='FIN DEL RECORRIDO DISPONIBLE';}
     $('overlay-eyebrow').textContent = content[0]; $('overlay-title').innerHTML = content[1]; $('overlay-copy').innerHTML = content[2];
     $('primary-action').innerHTML = `${content[3]} <span>→</span>`; $('overlay-hint').textContent = content[4];
     $('pause-button').innerHTML = '× <span>CERRAR</span>'; $('pause-button').setAttribute('aria-label','Cerrar menú y continuar');
@@ -146,9 +173,11 @@
     const previous = mode;
     if (mode === 'complete') loadLevel(levelIndex + 1);
     else if (mode === 'victory') loadLevel(0);
+    if(previous==='title'&&!save.introSeen){playStory('intro',()=>{save.introSeen=true;persist();resume();toast('Seguí al dragón. Buscá la página dorada junto al campamento.');});return;}
     resume(); tone(520,.2);
     if (previous === 'title') toast(matchMedia('(pointer: coarse)').matches ? 'Usa las flechas para moverte, ↑ para saltar y busca la gran runa ✧' : 'Muévete con A / D, salta con Espacio y busca la gran runa ✧');
   }
+  function playStory(kind,onDone){mode='story';clearControls();$('overlay').hidden=true;document.body.classList.remove('menu-open');$('toast').classList.remove('visible');ChorizoStory.play(kind,onDone);}
   function pause() { if (mode === 'playing') showOverlay('paused'); else if (mode === 'paused' && !$('help-dialog').open) resume(); }
   function burst(x,y,color,count=14) { for(let i=0;i<count;i++) particles.push({x,y,vx:(Math.random()-.5)*180,vy:(Math.random()-.7)*180,life:.5+Math.random()*.5,max:1,color,size:2+Math.random()*3}); }
   function overlaps(a,b) { return a.x < b.x+b.w && a.x+a.w > b.x && a.y < b.y+b.h && a.y+a.h > b.y; }
@@ -156,13 +185,15 @@
     if (player.invulnerable > 0 && !fall) return;
     player.hp--; shake = .22; tone(140,.22,'triangle'); burst(player.x+12,player.y+18,levelIndex?'#ba303a':'#e9cc99');
     if(levelIndex) splatter(player.x+12,player.y+25,12);
-    if (player.hp <= 0) { loadLevel(levelIndex); toast('Cada caída enseña algo. Inténtalo de nuevo.'); }
+    if (player.hp <= 0) { const retryChief=arena.active;loadLevel(levelIndex);if(retryChief){player.x=2940;player.y=408;checkpoint=[2940,408];checkpointIndex=1;camera=clamp(player.x-viewWidth*.35,0,Math.max(0,level.width-viewWidth));}toast(retryChief?'El Chief sigue ahí. Recuperaste vida y maná: volvé a entrar al peaje.':'Cada caída enseña algo. Inténtalo de nuevo.'); }
+    else if(arena.active&&!fall){player.x=clamp(player.x-player.facing*22,arena.left+8,arena.right-player.w-8);player.vx=0;player.meleeTime=0;player.castTime=0;hitstop=0;}
     else {
       player.x = checkpoint[0]; player.y = checkpoint[1]; player.vx = 0; player.vy = 0; player.jumps = 0; player.dashTime = 0; player.grounded = false; player.coyote = 0; player.buffer = 0;player.meleeTime=0;player.castTime=0;player.meleeHits.clear();player.animSpeed=0;player.landTime=0;player.stride=0;hostileShots=[];hitstop=0;
     }
     player.invulnerable = 1.8; updateStats();
   }
   function finishLevel() {
+    if(levelIndex===0&&!arena.defeated){toast('El Goblin Chief custodia el paso a Valdren. Derrotalo primero.');player.x=Math.min(player.x,arena.right-60);return;}
     if (level.rune && !has(level.rune)) { toast('La runa de esta región aún te espera. Busca el símbolo ✧.'); player.x -= 65; return; }
     if (!save.completed.includes(levelIndex)) save.completed.push(levelIndex);
     save.unlocked = Math.max(save.unlocked, Math.min(3,levelIndex+1)); save.best[levelIndex] = Math.max(save.best[levelIndex] || 0,gems.filter(g=>g.taken).length);
@@ -175,11 +206,58 @@
   }
   function addEffect(kind,x,y,dir=1,duration=.45){effects.push({kind,x,y,dir,life:duration,max:duration});}
   function damageEnemy(e,amount=1,direction=player.facing) {
-    if(e.hitTime>0||!e.alive)return false;
+    if(e.hitTime>0||!e.alive||(e.type==='chief'&&!arena.active))return false;
     e.hp-=amount;e.hitTime=.18;e.knockback=direction*(e.type==='brute'?40:150);burst(e.x+e.w/2,e.y+e.h/2,levelIndex?level.blood:'#c1df88',9);tone(e.type==='brute'?100:210,.13,'triangle');
     if(levelIndex)splatter(e.x+e.w/2,e.y+e.h/2,e.hp<=0?32:8);
     if(e.hp<=0){e.alive=false;kills++;shake=e.type==='brute'?.18:.07;manaOrbs.push({x:e.x+e.w/2,y:e.y+e.h/2,life:15});deathSprites.push({...e,life:.5});updateStats();}
+    if(e.type==='chief'){e.knockback=0;if(!e.alive){arena.active=false;arena.defeated=true;outroPending=true;hostileShots=[];document.body.classList.remove('arena-active');$('boss-hud').hidden=true;updateUI();}else updateBossUI(e);}
     return true;
+  }
+  function collectPage(page){
+    save.pages||=[];if(save.pages.includes(page.id))return;
+    if(!save.pages.includes('ignis'))save.pages.push('ignis');
+    if(page.id==='ignis2')save.pages.push('ignis2');
+    if(!has('fire'))save.abilities.push('fire');
+    persist();updateUI();addEffect('mana',page.x,page.y);tone(960,.3);
+    toast(page.id==='ignis2'?'Ignis II aprendido · más daño y explosión. Mismo coste: 20 MP.':'Grimorio de Ignis · E / J o ✦ para lanzar fuego. Cuesta 20 MP.');
+  }
+  function updateBossUI(e){
+    $('boss-hud').hidden=!arena.active;$('boss-fill').style.width=`${Math.max(0,e.hp)/e.maxHp*100}%`;
+    $('boss-meter').setAttribute('aria-valuenow',String(Math.max(0,e.hp)));
+    $('boss-phase').textContent=e.state==='windup'?(e.move==='slam'?'MAZA ARRIBA · SALTÁ LAS ONDAS':'BARRIDO · SALTÁ O ALEJATE'):e.state==='recover'?'RECUPERANDO · ATACÁ':e.state==='strike'?'¡CUIDADO!':'EL REY DEL PEAJE';
+  }
+  function enterArena(){
+    if(levelIndex!==0||arena.defeated||arena.active||player.x<arena.left+30)return;
+    if(!has('fire')||!has('double')){player.x=arena.left+5;player.vx=0;if(toastTimer<=0)toast('Antes del peaje: buscá la página de Ignis y la runa de doble salto.');return;}
+    arena.active=true;document.body.classList.add('arena-active');
+    const e=enemies.find(e=>e.type==='chief');e.state='approach';e.attackTime=.8;
+    hostileShots=[];updateBossUI(e);toast('Goblin Chief · esquivá sus ataques y aprovechá la recuperación.');
+  }
+  function updateChief(e,dt){
+    if(!arena.active)return true;
+    const p=player,dx=p.x+p.w/2-e.x-e.w/2;
+    e.attackTime-=dt;
+    if(e.state==='approach'){
+      e.dir=dx<0?-1:1;if(Math.abs(dx)>90)e.x=clamp(e.x+e.dir*e.speed*dt,e.min,e.max);
+      if(e.attackTime<=0){e.move=e.cycle++%2?'slam':'sweep';e.state='windup';e.attackTime=e.move==='slam'?.95:.75;}
+    }else if(e.state==='windup'&&e.attackTime<=0){
+      e.state='strike';e.attackTime=.22;tone(85,.18,'triangle');
+      if(e.move==='slam')for(const dir of [-1,1])hostileShots.push({x:e.x+e.w/2+dir*32,y:430,w:20,h:18,vx:dir*210,life:2.1,kind:'wave'});
+    }else if(e.state==='strike'){
+      if(e.move==='sweep'){
+        const hit={x:e.dir>0?e.x+e.w-4:e.x-96,y:e.y+29,w:100,h:e.h-29};
+        if(overlaps(hit,p)&&p.invulnerable<=0&&p.dashTime<=0){hurt();return false;}
+      }
+      if(e.attackTime<=0){e.state='recover';e.attackTime=1.1;}
+    }else if(e.state==='recover'&&e.attackTime<=0){e.state='approach';e.attackTime=.9;}
+    updateBossUI(e);
+    if(overlaps(p,e)&&p.invulnerable<=0&&p.dashTime<=0){hurt();return false;}
+    return true;
+  }
+  function explodeFire(s,direct=null){
+    effects.push({kind:'burst',x:s.x+8,y:s.y+7,life:.45,max:.45,radius:s.radius||27});if(!s.radius)return;
+    burst(s.x+8,s.y+7,'#f5bf6b',20);
+    for(const e of enemies)if(e!==direct&&e.alive&&Math.hypot(clamp(s.x+8,e.x,e.x+e.w)-s.x-8,clamp(s.y+7,e.y,e.y+e.h)-s.y-7)<=s.radius&&!blockedBetween(s.x+8,s.y+7,e.x+e.w/2,e.y+e.h/2))damageEnemy(e,2,Math.sign(s.vx));
   }
   function blockedBetween(x,y,xx,yy){const n=Math.ceil(Math.hypot(xx-x,yy-y)/3);for(let i=1;i<n;i++){const px=x+(xx-x)*i/n,py=y+(yy-y)*i/n;if(level.platforms.some(([bx,by,w,h])=>px>bx&&px<bx+w&&py>by&&py<by+h))return true;}return false;}
   function meleeBounds(){const p=player;return{x:p.meleeFacing>0?p.x+p.w-4:p.x-52,y:p.y-8,w:56,h:p.h+16};}
@@ -199,6 +277,7 @@
     const p=player;
     for(const e of enemies) if(e.alive) {
       e.hitTime=Math.max(0,e.hitTime-dt);e.attackCooldown-=dt;e.lastX=e.x;
+      if(e.type==='chief'){if(!updateChief(e,dt))return false;continue;}
       const dx=p.x+p.w/2-e.x-e.w/2,dy=p.y+p.h/2-e.y-e.h/2;
       if(e.type!=='walker'&&!encounterTypes.has(e.type)&&Math.abs(dx)<Math.min(330,viewWidth*.65)){encounterTypes.add(e.type);toast(`${e.name} · ${e.description}`);}
       let speed=e.speed+levelIndex*5;
@@ -242,7 +321,7 @@
   }
   function update(dt) {
     toastTimer -= dt; if (toastTimer <= 0) $('toast').classList.remove('visible');
-    if (mode !== 'playing') {if(mode!=='paused')time+=dt;pressed.clear();return;}
+    if (mode !== 'playing') {if(mode==='story')ChorizoStory.update(dt);else if(mode!=='paused')time+=dt;pressed.clear();return;}
     // Preserve queued inputs while the world freezes briefly on a confirmed hit.
     if(hitstop>0){hitstop=Math.max(0,hitstop-dt);return;}
     time+=dt;
@@ -264,12 +343,13 @@
     if((pressed.has('melee')||keys.has('melee'))&&p.meleeCooldown<=0&&p.dashTime<=0){p.meleeTime=SWORD.duration;p.meleeCooldown=SWORD.cooldown;p.meleeFacing=p.facing;p.meleeHits.clear();p.meleeImpact=false;tone(330,.13,'triangle');}
     if(pressed.has('dash') && has('dash') && p.dashCooldown <= 0) { p.dashTime = .22; p.dashCooldown = .85; p.vy = 0;p.meleeTime=0;addEffect('wind',p.x+12,p.y+20);tone(300,.2,'sawtooth',.016); }
     if(pressed.has('magic') && has('fire') && p.fireCooldown <= 0&&p.meleeTime<=0) {
-      if(p.mana>=FIRE_COST){p.mana-=FIRE_COST;p.manaDelay=1.2;shots.push({x:p.x+12+p.facing*16,y:p.y+17,vx:p.facing*480,w:16,h:14,life:1.45,age:0});p.fireCooldown=.4;p.castTime=.28;tone(240,.16,'triangle');}
+      if(p.mana>=FIRE_COST){p.mana-=FIRE_COST;p.manaDelay=1.2;shots.push({x:p.x+12+p.facing*16,y:p.y+17,vx:p.facing*480,w:16,h:14,life:1.45,age:0,damage:fireTier()===2?3:2,radius:fireTier()===2?64:0});p.fireCooldown=.4;p.castTime=.28;tone(240,.16,'triangle');}
       else if(manaNotice<=0){manaNotice=2;toast('Maná insuficiente · usa la espada y recoge las esencias azules.');tone(130,.09);}
     }
     if(p.dashTime > 0) { p.dashTime -= dt; p.vx = p.facing*690; p.vy = 0; if(Math.random()<.7) burst(p.x+12,p.y+20,'#b2c9ff',1); }
     else { p.vx += (dir*255-p.vx)*Math.min(1,dt*(p.grounded?17:10)); p.vy = Math.min(860,p.vy+1650*dt); }
     const beforeX = p.x; p.x = clamp(p.x+p.vx*dt,0,level.width-p.w);
+    enterArena();if(arena.active)p.x=clamp(p.x,arena.left+8,arena.right-p.w-8);
     for(const [x,y,w,h] of level.platforms) if(overlaps(p,{x,y,w,h})) { if(beforeX+p.w<=x+.5) p.x=x-p.w; else if(beforeX>=x+w-.5) p.x=x+w; }
     p.animSpeed=Math.abs(p.x-beforeX)/dt;
     if(wasGrounded&&p.dashTime<=0){const oldStride=p.stride;p.stride+=Math.abs(p.x-beforeX)/80*Math.PI*2;if(Math.floor(oldStride/Math.PI)!==Math.floor(p.stride/Math.PI)&&p.animSpeed>100)addEffect('dust',p.x+12,p.y+p.h,p.facing,.2);}
@@ -282,6 +362,7 @@
     if(!p.grounded && p.jumps===0 && p.coyote<=0) p.jumps=1;
     if(p.y>620) { hurt(true); pressed.clear(); return; }
     for(const g of gems) if(!g.taken && Math.hypot(p.x+12-g.x,p.y+18-g.y)<29) { g.taken=true;p.mana=Math.min(MAX_MANA,p.mana+12);addEffect('mana',g.x,g.y);burst(g.x,g.y,'#a1edce',9); tone(820,.09); updateStats(); }
+    for(const page of level.pages||[])if(!save.pages?.includes(page.id)&&Math.hypot(p.x+12-page.x,p.y+18-page.y)<30)collectPage(page);
     if(level.rune && !has(level.rune) && Math.hypot(p.x+12-level.runeX,p.y+18-level.runeY)<43) {
       save.abilities.push(level.rune); persist(); updateUI(); const a=abilities.find(a=>a.id===level.rune); toast(`${a.name} desbloqueado · ${a.text}`); burst(level.runeX,level.runeY,'#e7c3ff',35); tone(1040,.4);
     }
@@ -290,14 +371,15 @@
     if(!updateEnemies(dt,beforeY)){pressed.clear();return;}
     for(const s of shots) {
       s.x+=s.vx*dt; s.life-=dt;s.age+=dt;
-      for(const [x,y,w,h] of level.platforms) if(s.life>0&&overlaps(s,{x,y,w,h})){s.life=0;addEffect('burst',s.x,s.y);}
-      for(const e of enemies) if(e.alive && s.life>0 && overlaps(s,e)) {damageEnemy(e,2,Math.sign(s.vx));s.life=0;addEffect('burst',s.x,s.y);}
+      for(const [x,y,w,h] of level.platforms) if(s.life>0&&overlaps(s,{x,y,w,h})){s.life=0;explodeFire(s);}
+      for(const e of enemies) if(e.alive && s.life>0 && overlaps(s,e)) {damageEnemy(e,s.damage||2,Math.sign(s.vx));s.life=0;explodeFire(s,e);}
     }
     shots=shots.filter(s=>s.life>0);
     camera += (clamp(p.x-viewWidth*.35,0,Math.max(0,level.width-viewWidth))-camera)*Math.min(1,dt*6);
     $('cooldown-dash').style.height=`${clamp(p.dashCooldown/.85,0,1)*100}%`;
     $('cooldown-fire').style.height=`${clamp(p.fireCooldown/.4,0,1)*100}%`;
     $('cooldown-melee').style.height=`${clamp(p.meleeCooldown/SWORD.cooldown,0,1)*100}%`;updateManaUI();
+    if(outroPending){outroPending=false;hitstop=0;playStory('chief',()=>{resume();toast('El portal está abierto. Seguí al dragón hacia Valdren.');});return;}
     if(p.x>level.end-13 && p.x<level.end+65 && p.y+p.h>360) finishLevel();
     pressed.clear();
   }
@@ -362,6 +444,37 @@
     if(levelIndex>=2)for(let j=0;j<w/65;j++){rect(x+j*65+21,y+14,3,Math.min(h-16,15+random(j+index)*35),'#8f323433');}
   }
   function diamond(x,y,size,color) { polygon([[x,y-size],[x+size*.65,y],[x,y+size],[x-size*.65,y]],color);polygon([[x,y-size],[x,y+size],[x-size*.65,y]],'#ffffff36'); }
+  function drawQuestProps(){
+    if(levelIndex!==0)return;
+    // Camp, cottages and a timber lookout give the first region a inhabited identity.
+    rect(140,438,33,7,'#514333');UmbralArt.flame(ctx,156,432,time,.55,1);
+    for(const x of [45,900,2700]){
+      rect(x,381,76,66,'#bea270');polygon([[x-10,382],[x+37,345],[x+86,382]],'#8b5d46');
+      rect(x+30,414,19,33,'#4e4d39');rect(x+9,397,13,14,'#f5d99a');rect(x+58,397,12,14,'#f5d99a');
+      rect(x,381,76,4,'#654e38');
+    }
+    for(const x of [1440,1516]){rect(x,291,8,159,'#716047');rect(x+2,291,2,159,'#a28a5d');}
+    polygon([[1448,298],[1516,416],[1516,432],[1448,314]],'#7c674b');
+    rect(2930,384,5,66,'#6e543b');rect(2885,365,96,24,'#7c5b38');
+    ctx.font='9px monospace';ctx.textAlign='center';ctx.fillStyle='#f0d79c';ctx.fillText('PEAJE DEL REY →',2933,381);
+    for(const x of [arena.left,arena.right]){
+      rect(x-7,344,14,106,'#696950');polygon([[x-9,344],[x,327],[x+9,344]],'#a7a080');
+      if(arena.active){rect(x-4,120,8,324,'#e5b85877');for(let y=126;y<444;y+=20)rect(x-7,y+Math.sin(time*5)*3,14,3,'#f7db96');}
+    }
+    const chief=enemies.find(e=>e.type==='chief');
+    if(chief?.alive&&arena.active&&chief.state==='windup'){
+      const slam=chief.move==='slam',left=slam?chief.x-85:chief.dir>0?chief.x+chief.w:chief.x-96;
+      rect(left,444,slam?chief.w+170:96,5,'#ffd17a');
+      for(let x=left;x<left+(slam?chief.w+170:96);x+=14)rect(x,438,7,3,'#ffe9a3');
+    }
+    for(const page of level.pages||[])if(!save.pages?.includes(page.id)){
+      const y=page.y+Math.sin(time*2)*3;
+      glow(page.x,y,35,'#f6c26b44');rect(page.x-10,y-13,20,27,'#614f3b');rect(page.x-8,y-11,16,23,'#efd49a');
+      rect(page.x-4,y-7,8,2,'#b47c49');rect(page.x-4,y-2,8,2,'#b47c49');rect(page.x-4,y+3,5,2,'#b47c49');
+      ctx.fillStyle='#ffe6b0';ctx.font='9px monospace';ctx.textAlign='center';ctx.fillText(page.id==='ignis'?'PÁGINA · IGNIS':'PÁGINA · IGNIS II',page.x,y-24);
+    }
+    if(arena.defeated)UmbralArt.dragon(ctx,level.end+Math.sin(time)*12,240+Math.sin(time*3)*6,time,1,1,true);
+  }
   function drawPortal() {
     const x=level.end+25,y=390;glow(x,y-13,100,levelIndex===3?'#edd0ff38':'#b595f038');
     rect(x-42,443,84,9,'#82758c');rect(x-34,436,68,7,'#b3a0c1');
@@ -369,7 +482,7 @@
     ctx.lineWidth=3;ctx.strokeStyle='#dbc0ff';ctx.beginPath();ctx.ellipse(x,y,28,48,0,0,Math.PI*2);ctx.stroke();
     const g=ctx.createRadialGradient(x,y,2,x,y,48);g.addColorStop(0,'#e8d4ff77');g.addColorStop(.7,'#b18ee28a');g.addColorStop(1,'#6b458a44');ellipse(x,y,26,47,g);
     for(let i=0;i<9;i++){const a=time*.8+i*.7;rect(x+Math.sin(a)*20,y+Math.cos(a*1.2)*36,2,3,'#f0deff');}
-    ctx.textAlign='center';ctx.font='10px monospace';ctx.fillStyle='#e3d2f5';ctx.fillText(levelIndex===3?'EL CAMINO A CASA':'AL OTRO LADO',x,y-77);
+    ctx.textAlign='center';ctx.font='10px monospace';ctx.fillStyle='#e3d2f5';ctx.fillText(levelIndex===0?(arena.defeated?'A VALDREN':'EL CHIEF CUSTODIA EL PASO'):levelIndex===3?'TRAS EL DRAGÓN':'AL OTRO LADO',x,y-77);
   }
   function drawPlayer() {
     const p=player;
@@ -383,10 +496,10 @@
     if(p.dashTime>0){for(let i=3;i>0;i--){ctx.globalAlpha=.12+(3-i)*.06;UmbralArt.hero(ctx,p.x+12-direction*i*15,p.y+38,direction,motion);}ctx.globalAlpha=1;}
     UmbralArt.hero(ctx,p.x+12,p.y+38,direction,motion);
   }
-  function actorSize(e){return e.type==='bat'?[46,38]:e.type==='walker'?[42,38]:e.type==='hound'?[54,38]:e.type==='brute'?[58,64]:e.type==='hobgoblin'?[58,60]:[46,48];}
+  function actorSize(e){return e.type==='chief'?[86,82]:e.type==='bat'?[46,38]:e.type==='walker'?[42,38]:e.type==='hound'?[54,38]:e.type==='brute'?[58,64]:e.type==='hobgoblin'?[58,60]:[46,48];}
   function drawEnemy(e) {
     const [w,h]=actorSize(e);
-    const state=e.hitTime>0?'hurt':e.state==='windup'||e.state==='strike'?'attack':Math.abs(e.x-e.lastX)>.05?'walk':'idle';
+    const state=e.hitTime>0?'hurt':e.type==='chief'&&e.move==='slam'&&e.state==='windup'?'cast':e.state==='windup'||e.state==='strike'?'attack':Math.abs(e.x-e.lastX)>.05?'walk':'idle';
     ellipse(e.x+e.w/2,e.y+e.h+1,e.w*.55,3,'#171a1544');
     UmbralArt.actor(ctx,e.type,e.x+e.w/2,e.y+e.h,w,h,e.dir,time,state,e.phase);
     if(e.hitTime>0){ctx.globalAlpha=.15;rect(e.x,e.y,e.w,e.h,'#fff0bf');ctx.globalAlpha=1;}
@@ -404,6 +517,7 @@
   function render() {
     ctx.clearRect(0,0,viewWidth,540);background();ctx.save();ctx.translate(-Math.round(camera)+(shake?Math.sin(time*100)*3:0),0);
     for(let i=0;i<level.platforms.length;i++)drawPlatform(level.platforms[i],i);
+    drawQuestProps();
     for(const b of blood){rect(b.x,b.y,b.w,4,'#8d2632');rect(b.x+5,b.y+3,b.w/3,3,'#671f2b');rect(b.x+b.w-9,b.y+4,3,10,'#8d2632');}
     level.checkpoints.forEach(([x,y],i)=>{rect(x-3,y-41,6,41,'#82728e');rect(x-8,y-5,16,5,'#9e8aaa');glow(x,y-45,30,i<=checkpointIndex?'#98e7ed66':'#a2a0c22a');diamond(x,y-45,9,i<=checkpointIndex?'#a6eff0':'#8c829e');});
     for(const g of gems)if(!g.taken&&g.x>camera-25&&g.x<camera+viewWidth+25){const y=g.y+Math.sin(time*2+g.x)*4;glow(g.x,y,20,'#9bead027');diamond(g.x,y,8,'#a5ddc7');rect(g.x-1,y-5,2,3,'#e1fff1');}
@@ -412,14 +526,15 @@
     for(const e of enemies)if(e.alive&&e.x>camera-55&&e.x<camera+viewWidth+55)drawEnemy(e);
     for(const dead of deathSprites){const [w,h]=actorSize(dead);ctx.globalAlpha=dead.life/.5;ctx.save();ctx.translate(dead.x+dead.w/2,dead.y+dead.h);ctx.scale(1,Math.max(.15,dead.life/.5));UmbralArt.actor(ctx,dead.type,0,0,w,h,dead.dir,time,'hurt',dead.phase);ctx.restore();ctx.globalAlpha=1;}
     for(const orb of manaOrbs){const y=orb.y+Math.sin(time*5+orb.x)*3;glow(orb.x,y,17,'#59cde443');diamond(orb.x,y,6,'#7dd8e4');rect(orb.x-1,y-3,2,3,'#edf9da');}
-    for(const s of hostileShots){if(s.life<=0)continue;if(s.kind==='arrow'){const dir=Math.sign(s.vx);rect(s.x,s.y+2,18,2,'#d1b785');polygon([[s.x+(dir>0?20:-2),s.y+3],[s.x+(dir>0?14:4),s.y-1],[s.x+(dir>0?14:4),s.y+7]],'#e8e5c5');}else UmbralArt.flame(ctx,s.x+6,s.y+6,time,.7,Math.sign(s.vx));}
-    for(const s of shots)UmbralArt.flame(ctx,s.x+8,s.y+7,time,1,Math.sign(s.vx));
+    for(const s of hostileShots){if(s.life<=0)continue;if(s.kind==='wave'){polygon([[s.x-4,s.y+18],[s.x+5,s.y-8],[s.x+11,s.y+2],[s.x+17,s.y-5],[s.x+25,s.y+18]],'#e7b46c');rect(s.x+6,s.y+4,7,13,'#fff0b3');}else if(s.kind==='arrow'){const dir=Math.sign(s.vx);rect(s.x,s.y+2,18,2,'#d1b785');polygon([[s.x+(dir>0?20:-2),s.y+3],[s.x+(dir>0?14:4),s.y-1],[s.x+(dir>0?14:4),s.y+7]],'#e8e5c5');}else UmbralArt.flame(ctx,s.x+6,s.y+6,time,.7,Math.sign(s.vx));}
+    for(const s of shots)UmbralArt.flame(ctx,s.x+8,s.y+7,time,s.radius?1.3:1,Math.sign(s.vx));
     drawPlayer();
     for(const e of effects)UmbralArt.effect(ctx,e);
     for(const p of particles){ctx.globalAlpha=clamp(p.life,0,1);rect(p.x,p.y,p.size,p.size,p.color);}ctx.globalAlpha=1;
     ctx.restore();
     const shade=ctx.createLinearGradient(0,465,0,540);shade.addColorStop(0,'transparent');shade.addColorStop(1,levelIndex<2?'#20261b77':'#180e1a99');ctx.fillStyle=shade;ctx.fillRect(0,465,viewWidth,75);
     if(!$('overlay').hidden&&!$('panel-bestiary').hidden)for(const c of bestiaryCanvases){const context=c.getContext('2d');context.clearRect(0,0,72,72);UmbralArt.actor(context,c.dataset.creature,36,67,66,66,1,performance.now()/1000,'walk');}
+    if(ChorizoStory.open)ChorizoStory.draw();
   }
   function frame(stamp) {
     accumulator+=Math.min((stamp-lastTime)/1000 || 0,.05);lastTime=stamp;
@@ -429,6 +544,7 @@
   function resize(){const box=$('game-stage').getBoundingClientRect();canvas.width=Math.max(1,Math.round(540*box.width/Math.max(1,box.height)));canvas.height=540;viewWidth=canvas.width;ctx.imageSmoothingEnabled=false;camera=clamp(camera,0,Math.max(0,(level?.width||3000)-viewWidth));}
   window.addEventListener('resize',resize);
   window.addEventListener('keydown',e=>{
+    if(ChorizoStory.open)return;
     if($('help-dialog').open)return;
     if(e.code==='KeyF'){if(!e.repeat)toggleFullscreen();e.preventDefault();return;}
     if(e.code==='KeyM'){if(!e.repeat){if(mode==='playing')showOverlay('paused');setTab('map');}e.preventDefault();return;}
@@ -447,6 +563,7 @@
     for(const type of ['pointerup','pointercancel','lostpointercapture'])button.addEventListener(type,()=>{keys.delete(button.dataset.control);button.classList.remove('pressed');});
   });
   $('primary-action').addEventListener('click',primaryAction);
+  $('replay-intro').addEventListener('click',()=>{const previous=mode;playStory('intro',()=>showOverlay(previous));});
   document.querySelectorAll('[data-tab]').forEach(button=>button.addEventListener('click',()=>setTab(button.dataset.tab)));
   $('fullscreen-button').addEventListener('click',toggleFullscreen);
   document.addEventListener('fullscreenchange',()=>{resize();$('fullscreen-button').setAttribute('aria-label',document.fullscreenElement?'Salir de pantalla completa':'Pantalla completa');});
